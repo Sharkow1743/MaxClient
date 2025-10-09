@@ -5,8 +5,6 @@ from typing import Optional, Dict, Callable, Any, List
 
 from MaxBridge import MaxAPI
 from ui import AppUI
-import dearpygui.dearpygui as dpg
-
 
 class App:
     """
@@ -19,6 +17,7 @@ class App:
 
         self.token: Optional[str] = keyring.get_password('maxApp', 'token')
         self.api: Optional[MaxAPI] = None
+        # The UI is now an instance of AppUI
         self.ui: Optional[AppUI] = None
 
         self.state: Dict[str, Any] = {
@@ -72,8 +71,10 @@ class App:
                     messages.append(message_data)
                     self.logger.debug(f"Added new message {message_data.get('id')} to chat {chat_id_str}")
 
+                # Instead of using dpg.queue_main_callback, we directly call the UI handler method.
+                # pywebview's evaluate_js is thread-safe, so this is safe to do.
                 if self.ui:
-                    dpg.queue_main_callback(self.ui.handle_new_message, user_data={'chat_id': chat_id})
+                    self.ui.handle_new_message(chat_id=chat_id)
         else:
             self.logger.debug(f"Unhandled event payload: {payload}")
 
@@ -88,8 +89,9 @@ class App:
         """
         self.logger.info(f"Initiating authentication for phone: {phone_number}")
         try:
-            temp_api = MaxAPI()
-            temp_api.send_vertify_code(str(phone_number))
+            # A temporary API instance is used for the auth flow
+            with MaxAPI() as temp_api:
+                temp_api.send_vertify_code(str(phone_number))
             self.logger.debug("Verification code sent successfully.")
         except Exception as e:
             self.logger.error(f"Failed to send verification code: {e}", exc_info=True)
@@ -246,7 +248,8 @@ class App:
     def _setup_logging(self):
         """Configures logging to file and console."""
         logger = logging.getLogger()
-        if logger.handlers:
+        if logger.hasHandlers():
+            # Avoid adding duplicate handlers if this is called more than once
             return
         logger.setLevel(logging.DEBUG)
 
@@ -267,5 +270,6 @@ class App:
             file_handler.setLevel(logging.DEBUG)
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
-        except PermissionError:
-            print("Warning: Could not open log file due to a permission error.")
+        except (PermissionError, IOError) as e:
+            # Log to console if file logging fails
+            print(f"Warning: Could not open log file due to an error: {e}")

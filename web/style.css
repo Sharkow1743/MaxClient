@@ -1,0 +1,117 @@
+body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: sans-serif;
+    background-color: #f0f0f0;
+}
+
+#app {
+    display: flex;
+    height: 100vh;
+}
+
+#auth-view {
+    width: 300px;
+    margin: auto;
+    padding: 20px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+}
+
+#auth-view h2 {
+    text-align: center;
+}
+
+#auth-view input, #auth-view button {
+    width: 100%;
+    padding: 10px;
+    margin-top: 10px;
+    box-sizing: border-box;
+}
+
+#main-view {
+    display: flex;
+    width: 100%;
+}
+
+#nav {
+    width: 250px;
+    background-color: #333;
+    color: white;
+    overflow-y: auto;
+}
+
+#chat-list .chat-item {
+    padding: 15px;
+    cursor: pointer;
+    border-bottom: 1px solid #444;
+}
+
+#chat-list .chat-item:hover {
+    background-color: #555;
+}
+
+#chat {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+#chat-title {
+    padding: 15px;
+    background-color: #eee;
+    border-bottom: 1px solid #ddd;
+    font-weight: bold;
+}
+
+#history {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 15px;
+}
+
+#history-content .message {
+    margin-bottom: 10px;
+}
+
+#history-content .message .sender {
+    font-weight: bold;
+    color: #333;
+}
+
+#history-content .message .text {
+    background-color: #ddd;
+    padding: 10px;
+    border-radius: 5px;
+    display: inline-block;
+}
+
+#input-area {
+    display: flex;
+    padding: 10px;
+    background-color: #eee;
+}
+
+#input-text {
+    flex-grow: 1;
+    resize: none;
+    padding: 10px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+}
+
+#input-area button {
+    padding: 10px 20px;
+    margin-left: 10px;
+    border: none;
+    background-color: #007bff;
+    color: white;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+#input-area button:hover {
+    background-color: #0056b3;
+}

@@ -1,5 +1,4 @@
 from app import App
-import os
 
 def main():
     """
