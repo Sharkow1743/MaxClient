@@ -67,8 +67,9 @@ class Api:
         Calls the app logic to fetch older messages and add them to the state.
         Returns the list of messages that were fetched.
         """
-        self.refresh_ui_callback()
-        return self._load_more_handler(chat_id)
+        result = self._load_more_handler(chat_id)
+        if result: self.refresh_ui_callback(False)
+        return result
 
 
 class AppUI:
@@ -117,7 +118,7 @@ class AppUI:
             chats_json = json.dumps(chats)
             self.window.evaluate_js(f'loadChats({chats_json})')
 
-    def refresh_chat_history(self):
+    def refresh_chat_history(self, scroll_to_bottom = True):
         """
         Gathers all necessary data for the current chat view (messages, chats,
         and all relevant profiles) and sends it to the JavaScript UI.
@@ -144,7 +145,7 @@ class AppUI:
                 'profilesInChat': profiles_in_chat  # Pass the batch of profiles
             }
             data_json = json.dumps(data)
-            self.window.evaluate_js(f'refreshChatHistory({data_json})')
+            self.window.evaluate_js(f'refreshChatHistory({data_json}, {'true' if scroll_to_bottom else 'false'})')
 
     def handle_new_message(self, **kwargs):
         chat_id = str(kwargs.get('chat_id'))

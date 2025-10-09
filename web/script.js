@@ -1,5 +1,5 @@
 let currentChatId = null;
-let isLoadingMore = false; // Flag to prevent multiple simultaneous loads
+let isFullloaded = false; // Flag to prevent multiple simultaneous loads
 
 
 function startAuth() {
@@ -37,6 +37,7 @@ function sendMessage() {
 // MODIFICATION #1: Make navToChat an async function and track chat ID
 async function navToChat(chatId) {
     currentChatId = chatId; // Set the active chat ID
+    isFullloaded = false;
     // We now await the navigation call to ensure the backend has the data
     // before the UI tries to refresh.
     await window.pywebview.api.nav_to_chat(chatId);
@@ -56,10 +57,11 @@ function loadChats(chats) {
     }
 }
 
-function refreshChatHistory(data) {
+function refreshChatHistory(data, scrollToBottom = true) {
     // Destructure the new profilesInChat object from the data payload
     const { chatId, messages, profile, chats, profilesInChat } = data;
     const historyContent = document.getElementById('history-content');
+    const oldScrollHeight = historyElement.scrollHeight;
     historyContent.innerHTML = '';
 
     const chatTitle = chats[chatId]?.title || `Chat ${chatId}`;
@@ -95,10 +97,13 @@ function refreshChatHistory(data) {
         historyContent.appendChild(messageElement);
     });
 
-    // This remains the default behavior for new messages or navigating to a new chat.
-    // The infinite scroll logic will override this when it needs to.
-    const history = document.getElementById('history');
-    history.scrollTop = history.scrollHeight;
+    if (scrollToBottom) {
+        const history = document.getElementById('history');
+        history.scrollTop = history.scrollHeight;
+    } else {
+        const newScrollHeight = historyElement.scrollHeight;
+        historyElement.scrollTop = newScrollHeight - oldScrollHeight;
+    }
 }
 
 function showMainView() {
@@ -121,18 +126,12 @@ const historyElement = document.getElementById('history');
 
 historyElement.addEventListener('scroll', async () => {
     // If the user has scrolled to the top and we're not already loading more messages...
-    if (historyElement.scrollTop === 0 && !isLoadingMore) {
+    if (historyElement.scrollTop <= 500 && !isFullloaded) {
         if (!currentChatId) return; // Exit if no chat is active
 
-        isLoadingMore = true;
-        const oldScrollHeight = historyElement.scrollHeight;
-
         // 1. Call the backend to load more messages into its internal state.
-        await window.pywebview.api.load_more_messages(currentChatId);
-
-        const newScrollHeight = historyElement.scrollHeight;
-        historyElement.scrollTop = newScrollHeight - oldScrollHeight;
-
-        isLoadingMore = false; // Reset the flag
+        if (! await window.pywebview.api.load_more_messages(currentChatId)) {
+            isFullloaded = true
+        }
     }
 });

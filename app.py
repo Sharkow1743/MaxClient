@@ -192,14 +192,14 @@ class App:
             history = self.api.get_history(chat_id=int(chat_id), count=50, from_timestamp=oldest_message_timestamp)
             older_messages = history.get('payload', {}).get('messages', [])
 
-            if older_messages:
+            if older_messages and not older_messages[0].get('time') == oldest_message_timestamp:
                 # Prepend older messages to the existing list
                 self.state['messages'][chat_id] = older_messages + messages
                 self.logger.info(f"Loaded {len(older_messages)} older messages.")
-            else:
-                self.logger.info("No more older messages to load.")
+                return older_messages
             
-            return older_messages
+            self.logger.info("No more older messages to load.")
+            return False
         except Exception as e:
             self.logger.error(f"Failed to load more messages: {e}", exc_info=True)
             return []
