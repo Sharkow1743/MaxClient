@@ -1,4 +1,6 @@
-// Remove the old 'pywebviewready' event listener completely.
+let currentChatId = null;
+let isLoadingMore = false; // Flag to prevent multiple simultaneous loads
+
 
 function startAuth() {
     const phone = document.getElementById('auth-phone').value;
@@ -32,8 +34,9 @@ function sendMessage() {
     }
 }
 
-// MODIFICATION #1: Make navToChat an async function
+// MODIFICATION #1: Make navToChat an async function and track chat ID
 async function navToChat(chatId) {
+    currentChatId = chatId; // Set the active chat ID
     // We now await the navigation call to ensure the backend has the data
     // before the UI tries to refresh.
     await window.pywebview.api.nav_to_chat(chatId);
@@ -92,6 +95,8 @@ function refreshChatHistory(data) {
         historyContent.appendChild(messageElement);
     });
 
+    // This remains the default behavior for new messages or navigating to a new chat.
+    // The infinite scroll logic will override this when it needs to.
     const history = document.getElementById('history');
     history.scrollTop = history.scrollHeight;
 }
@@ -108,5 +113,26 @@ document.getElementById('input-text').addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         sendMessage();
+    }
+});
+
+// --- NEW INFINITE SCROLL LOGIC ---
+const historyElement = document.getElementById('history');
+
+historyElement.addEventListener('scroll', async () => {
+    // If the user has scrolled to the top and we're not already loading more messages...
+    if (historyElement.scrollTop === 0 && !isLoadingMore) {
+        if (!currentChatId) return; // Exit if no chat is active
+
+        isLoadingMore = true;
+        const oldScrollHeight = historyElement.scrollHeight;
+
+        // 1. Call the backend to load more messages into its internal state.
+        await window.pywebview.api.load_more_messages(currentChatId);
+
+        const newScrollHeight = historyElement.scrollHeight;
+        historyElement.scrollTop = newScrollHeight - oldScrollHeight;
+
+        isLoadingMore = false; // Reset the flag
     }
 });

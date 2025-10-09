@@ -2,7 +2,7 @@
 
 import webview
 import json
-from typing import TYPE_CHECKING, Dict, Callable, Any, Optional
+from typing import TYPE_CHECKING, Dict, Callable, Any, Optional, List
 
 if TYPE_CHECKING:
     from app import App
@@ -19,14 +19,14 @@ class Api:
         send_handler: Callable[[str], Optional[Dict]],
         nav_handler: Callable[[str], bool],
         get_chats_handler: Callable[[], Dict],
-        get_profile_handler: Callable[[str], Optional[Dict]]
+        load_more_handler: Callable[[str], List[Dict]]  # Add this line
     ):
         # Store the functions passed in from AppUI
         self._auth_handler = auth_handler
         self._send_handler = send_handler
         self._nav_handler = nav_handler
         self._get_chats_handler = get_chats_handler
-        self._get_profile_handler = get_profile_handler
+        self._load_more_handler = load_more_handler  # Add this line
 
         self._auth_checker: Optional[Callable[[str], bool]] = None
         
@@ -60,9 +60,15 @@ class Api:
     def load_chats(self):
         """Called from JavaScript to load the initial chat list."""
         self.load_chats_callback()
-
-    def get_profile(self, id: str) -> Dict:
-        return self._get_profile_handler(id)
+    
+    # --- NEW METHOD ---
+    def load_more_messages(self, chat_id: str) -> List[Dict]:
+        """
+        Calls the app logic to fetch older messages and add them to the state.
+        Returns the list of messages that were fetched.
+        """
+        self.refresh_ui_callback()
+        return self._load_more_handler(chat_id)
 
 
 class AppUI:
@@ -76,7 +82,7 @@ class AppUI:
             send_handler=self.app_logic.send,
             nav_handler=self.app_logic.nav_chat,
             get_chats_handler=self.app_logic.get_all_chats,
-            get_profile_handler=self.app_logic.get_profile,
+            load_more_handler=self.app_logic.load_more_messages # Add this line
         )
 
     def run(self):
@@ -97,7 +103,6 @@ class AppUI:
         if self.app_logic.is_authenticated():
             self._js_show_main_view()
 
-    # MODIFICATION HERE
     def _js_show_main_view(self):
         """Tells the JavaScript to show the main chat interface AND loads the chats."""
         if self.window:

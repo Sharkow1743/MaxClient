@@ -30,7 +30,7 @@ class App:
 
         self._initialize_api()
         if self.is_authenticated():
-            self.state['profile'] = getattr(self.api, 'user', {})
+            self.state['profile'] = getattr(self.api, 'user', {})['contact']
 
         # The App creates the UI, passing a reference to itself.
         self.ui = AppUI(self)
@@ -133,10 +133,11 @@ class App:
             self.logger.debug(f"Sending message to chat {chat_id_int}")
             
             # The API call returns the sent message object
-            sent_message = self.api.send_message(chat_id=chat_id_int, text=text)
+            sent_message = self.api.send_message(chat_id=chat_id_int, text=text, wait_for_response=True)
+            sent_message = sent_message.get('payload', {}).get('message')
             
             # Immediately add the new message to our state for instant UI update
-            if sent_message and sent_message.get('id'):
+            if sent_message:
                 messages = self.state['messages'].setdefault(chat_id_str, [])
                 messages.append(sent_message)
                 self.logger.info(f"Message {sent_message.get('id')} sent and added to state.")
