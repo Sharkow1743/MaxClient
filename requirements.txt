@@ -3,3 +3,4 @@ keyring
 PyWebView
 pyinstaller
 MaxBridge
+tornado

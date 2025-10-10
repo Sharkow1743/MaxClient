@@ -37,9 +37,9 @@ jobs:
             - name: Build Executable with PyInstaller
               run: |
                   if ($env:RUNNER_OS -eq "Windows") {
-                    pyinstaller --name "MaxClient" --onefile --windowed --add-data "web;web" main.py
+                    pyinstaller --name "MaxClient" --onefile --windowed --hidden-import "tornado.web" --add-data "web;web" main.py
                   } else {
-                    pyinstaller --name "MaxClient" --onefile --windowed --add-data "web:web" main.py
+                    pyinstaller --name "MaxClient" --onefile --windowed --hidden-import "tornado.web" --add-data "web:web" main.py
                   }
               shell: pwsh
 

@@ -95,7 +95,7 @@ class AppUI:
             js_api=self.api,
             width=900, height=650, min_size=(700, 500)
         )
-        webview.start(self.on_shown, debug=True)
+        webview.start(self.on_shown)
 
     def on_shown(self):
         if self.app_logic.is_authenticated():
