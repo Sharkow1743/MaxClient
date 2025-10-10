@@ -1,5 +1,3 @@
-# ui.py - The rest of the file is correct, only these methods need updating
-
 import webview
 import json
 from typing import TYPE_CHECKING, Dict, Callable, Any, Optional, List
@@ -7,11 +5,9 @@ from typing import TYPE_CHECKING, Dict, Callable, Any, Optional, List
 if TYPE_CHECKING:
     from app import App
 
-# The Api class from the previous turn is correct and does not need changes.
 class Api:
     """
-    A completely decoupled API bridge. 
-    It holds no complex objects, only the functions it needs to call.
+    A completely decoupled API bridge.
     """
     def __init__(
         self,
@@ -19,18 +15,19 @@ class Api:
         send_handler: Callable[[str], Optional[Dict]],
         nav_handler: Callable[[str], bool],
         get_chats_handler: Callable[[], Dict],
-        load_more_handler: Callable[[str], List[Dict]]  # Add this line
+        load_more_handler: Callable[[str], List[Dict]],
+        # --- NEW HANDLER FOR LAZY LOADING ---
+        get_attachment_handler: Callable[[str, str, Dict], Optional[Dict]]
     ):
-        # Store the functions passed in from AppUI
         self._auth_handler = auth_handler
         self._send_handler = send_handler
         self._nav_handler = nav_handler
         self._get_chats_handler = get_chats_handler
-        self._load_more_handler = load_more_handler  # Add this line
+        self._load_more_handler = load_more_handler
+        # --- STORE THE NEW HANDLER ---
+        self._get_attachment_handler = get_attachment_handler
 
         self._auth_checker: Optional[Callable[[str], bool]] = None
-        
-        # Callbacks to be set by AppUI for triggering UI updates
         self.refresh_ui_callback: Callable[[], None] = lambda: None
         self.load_chats_callback: Callable[[], None] = lambda: None
         self.show_main_view_callback: Callable[[], None] = lambda: None
@@ -40,7 +37,6 @@ class Api:
             self._auth_checker = self._auth_handler(phone)
             return {'success': True}
         except Exception as e:
-            print(f"ERROR in start_auth: {e}") 
             return {'success': False, 'error': str(e)}
 
     def submit_code(self, code: str) -> Dict:
@@ -58,18 +54,19 @@ class Api:
             self.refresh_ui_callback()
 
     def load_chats(self):
-        """Called from JavaScript to load the initial chat list."""
         self.load_chats_callback()
-    
-    # --- NEW METHOD ---
+
     def load_more_messages(self, chat_id: str) -> List[Dict]:
-        """
-        Calls the app logic to fetch older messages and add them to the state.
-        Returns the list of messages that were fetched.
-        """
         result = self._load_more_handler(chat_id)
         if result: self.refresh_ui_callback(False)
         return result
+    
+    # --- NEW API METHOD FOR JAVASCRIPT ---
+    def get_attachment(self, chatId: str, messageId: str, attachInfo: Dict) -> Optional[Dict]:
+        """
+        Called from JS to trigger the on-demand download of an attachment.
+        """
+        return self._get_attachment_handler(chatId, messageId, attachInfo)
 
 
 class AppUI:
@@ -83,7 +80,9 @@ class AppUI:
             send_handler=self.app_logic.send,
             nav_handler=self.app_logic.nav_chat,
             get_chats_handler=self.app_logic.get_all_chats,
-            load_more_handler=self.app_logic.load_more_messages # Add this line
+            load_more_handler=self.app_logic.load_more_messages,
+            # --- WIRE UP THE NEW HANDLER ---
+            get_attachment_handler=self.app_logic.get_attachment_data_uri
         )
 
     def run(self):
@@ -94,9 +93,7 @@ class AppUI:
             'MAX Messenger',
             'web/index.html',
             js_api=self.api,
-            width=900,
-            height=650,
-            min_size=(700, 500)
+            width=900, height=650, min_size=(700, 500)
         )
         webview.start(self.on_shown, debug=True)
 
@@ -105,11 +102,8 @@ class AppUI:
             self._js_show_main_view()
 
     def _js_show_main_view(self):
-        """Tells the JavaScript to show the main chat interface AND loads the chats."""
         if self.window:
-            # Step 1: Tell JavaScript to switch which view is visible.
             self.window.evaluate_js('showMainView()')
-            # Step 2: Immediately tell the API to load the chats. This keeps control in Python.
             self.api.load_chats()
 
     def _js_load_chats(self):
@@ -118,22 +112,16 @@ class AppUI:
             chats_json = json.dumps(chats)
             self.window.evaluate_js(f'loadChats({chats_json})')
 
-    def refresh_chat_history(self, scroll_to_bottom = True):
-        """
-        Gathers all necessary data for the current chat view (messages, chats,
-        and all relevant profiles) and sends it to the JavaScript UI.
-        """
+    def refresh_chat_history(self, scroll_to_bottom=True):
         if not self.window: return
         chat_id = self.app_logic.state.get('chat')
         if chat_id:
             messages_in_chat = self.app_logic.state['messages'].get(chat_id, [])
             
-            # Create a dictionary of only the profiles relevant to this chat view.
-            # This is far more efficient than JS calling back for each profile.
+            # This is now much faster as get_profile is just a cache lookup.
             profiles_in_chat = {
                 uid: self.app_logic.get_profile(str(uid))
                 for msg in messages_in_chat
-                # Using the walrus operator (:=) for cleaner code
                 if (uid := str(msg.get('sender')))
             }
             
@@ -142,10 +130,10 @@ class AppUI:
                 'messages': messages_in_chat,
                 'profile': self.app_logic.state.get('profile', {}),
                 'chats': self.app_logic.state.get('chats', {}),
-                'profilesInChat': profiles_in_chat  # Pass the batch of profiles
+                'profilesInChat': profiles_in_chat
             }
-            data_json = json.dumps(data)
-            self.window.evaluate_js(f'refreshChatHistory({data_json}, {'true' if scroll_to_bottom else 'false'})')
+            data_json = json.dumps(data, default=str) # Use default=str for safety
+            self.window.evaluate_js(f'refreshChatHistory({data_json}, {str(scroll_to_bottom).lower()})')
 
     def handle_new_message(self, **kwargs):
         chat_id = str(kwargs.get('chat_id'))

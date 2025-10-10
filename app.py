@@ -2,8 +2,11 @@ import keyring
 import logging
 from logging.handlers import RotatingFileHandler
 from typing import Optional, Dict, Callable, Any, List
-
 from MaxBridge import MaxAPI
+import requests
+import base64
+import mimetypes
+
 from ui import AppUI
 
 class App:
@@ -17,22 +20,20 @@ class App:
 
         self.token: Optional[str] = keyring.get_password('maxApp', 'token')
         self.api: Optional[MaxAPI] = None
-        # The UI is now an instance of AppUI
         self.ui: Optional[AppUI] = None
 
         self.state: Dict[str, Any] = {
-            'chat': None,          # Current active chat ID
-            'messages': {},        # {chat_id: [message_dict, ...]}
-            'profile': {},         # User profile info
-            'chats': {},           # Cached chats: {chat_id: chat_info}
-            'profiles': {}         # Cached contact profiles: {user_id: profile_info}
+            'chat': None,
+            'messages': {},
+            'profile': {},
+            'chats': {},
+            'profiles': {}
         }
 
         self._initialize_api()
         if self.is_authenticated():
-            self.state['profile'] = getattr(self.api, 'user', {})['contact']
+            self.state['profile'] = getattr(self.api, 'user', {}).get('contact', {})
 
-        # The App creates the UI, passing a reference to itself.
         self.ui = AppUI(self)
 
     def run(self):
@@ -46,7 +47,6 @@ class App:
         """Initializes the MaxAPI instance with the current token."""
         if self.api:
             self.api.close()
-
         if self.token:
             self.logger.info("Authentication token loaded, initializing API.")
             self.api = MaxAPI(self.token, on_event=self._handle_event)
@@ -60,36 +60,71 @@ class App:
         payload = event.get('payload', {})
         self.logger.info(f"Received event with opcode {opcode}")
 
-        if opcode == 128:  # New message event
+        if opcode == 128:
             message_data = payload.get('message')
             chat_id = payload.get('chatId')
-
             if chat_id and message_data:
                 chat_id_str = str(chat_id)
                 messages = self.state['messages'].setdefault(chat_id_str, [])
                 if not any(msg['id'] == message_data['id'] for msg in messages):
+                    # We don't process attachments for live events to save resources,
+                    # as they will be lazy-loaded by the UI anyway.
                     messages.append(message_data)
                     self.logger.debug(f"Added new message {message_data.get('id')} to chat {chat_id_str}")
-
-                # Instead of using dpg.queue_main_callback, we directly call the UI handler method.
-                # pywebview's evaluate_js is thread-safe, so this is safe to do.
                 if self.ui:
                     self.ui.handle_new_message(chat_id=chat_id)
         else:
             self.logger.debug(f"Unhandled event payload: {payload}")
 
+    # --- OPTIMIZATION 1: REMOVED EAGER DOWNLOADING ---
+    def _process_msg(self, msgs: List[Dict]) -> List[Dict]:
+        """
+        This function is now a simple pass-through.
+        All attachment processing is deferred until requested by the UI.
+        """
+        return msgs
+
+    # --- OPTIMIZATION 2: BATCH PROFILE FETCHING ---
+    def _fetch_and_cache_profiles_for_messages(self, messages: List[Dict]):
+        """
+        Scans messages, finds uncached user profiles, and fetches them in a single batch request.
+        """
+        if not self.api: return
+
+        # Collect all unique sender IDs that we haven't cached yet.
+        profile_cache = self.state['profiles']
+        uncached_user_ids = {
+            str(msg['sender'])
+            for msg in messages
+            if 'sender' in msg and str(msg['sender']) not in profile_cache
+        }
+
+        if not uncached_user_ids:
+            return # All profiles are already in cache
+
+        self.logger.info(f"Found {len(uncached_user_ids)} new profiles to fetch.")
+        try:
+            # Convert to list of integers for the API call
+            user_ids_to_fetch = [int(uid) for uid in uncached_user_ids]
+            response = self.api.get_contact_details(user_ids_to_fetch)
+            profiles = response.get('payload', {}).get('contacts', [])
+            
+            # Update the cache
+            for profile in profiles:
+                profile_id_str = str(profile.get('id'))
+                self.state['profiles'][profile_id_str] = profile
+            self.logger.info(f"Successfully cached {len(profiles)} new profiles.")
+
+        except Exception as e:
+            self.logger.error(f"Failed to batch fetch profiles: {e}", exc_info=True)
+
+
     def is_authenticated(self) -> bool:
-        """Checks if a user token exists."""
         return self.token is not None
 
     def auth(self, phone_number: str) -> Callable[[str], bool]:
-        """
-        Starts the authentication flow.
-        Returns a 'checker' function that the UI can call to verify the code.
-        """
         self.logger.info(f"Initiating authentication for phone: {phone_number}")
         try:
-            # A temporary API instance is used for the auth flow
             with MaxAPI() as temp_api:
                 temp_api.send_vertify_code(str(phone_number))
             self.logger.debug("Verification code sent successfully.")
@@ -102,10 +137,7 @@ class App:
                 self.logger.info("Verifying code...")
                 with MaxAPI() as temp_api:
                     result = temp_api.check_vertify_code(str(code))
-
-                self.logger.debug(f"Auth response: {result}")
                 new_token = result.get('token') or result.get('payload', {}).get('token')
-
                 if new_token:
                     keyring.set_password('maxApp', 'token', new_token)
                     self.token = new_token
@@ -119,28 +151,18 @@ class App:
             except Exception as e:
                 self.logger.error(f"Error during code verification: {e}", exc_info=True)
                 return False
-
         return check_code
 
     def send(self, text: str) -> Optional[Dict]:
-        """Sends a message and updates local state immediately."""
-        if not self.state.get('chat') or not self.api:
-            self.logger.warning("Cannot send message: no active chat or not authenticated.")
-            return None
+        if not self.state.get('chat') or not self.api: return None
         try:
             chat_id_str = self.state['chat']
             chat_id_int = int(chat_id_str)
-            self.logger.debug(f"Sending message to chat {chat_id_int}")
-            
-            # The API call returns the sent message object
             sent_message = self.api.send_message(chat_id=chat_id_int, text=text, wait_for_response=True)
             sent_message = sent_message.get('payload', {}).get('message')
-            
-            # Immediately add the new message to our state for instant UI update
             if sent_message:
                 messages = self.state['messages'].setdefault(chat_id_str, [])
                 messages.append(sent_message)
-                self.logger.info(f"Message {sent_message.get('id')} sent and added to state.")
                 return sent_message
             return None
         except Exception as e:
@@ -148,9 +170,7 @@ class App:
             return None
 
     def nav_chat(self, chat_id: str) -> bool:
-        """Loads message history for a given chat and sets it as active."""
-        if not self.api:
-            return False
+        if not self.api: return False
         try:
             self.logger.info(f"Navigating to chat {chat_id}")
             self.state['chat'] = chat_id
@@ -158,11 +178,14 @@ class App:
             history = self.api.get_history(chat_id=int(chat_id), count=50)
             new_messages = history.get('payload', {}).get('messages', [])
             
+            # --- OPTIMIZATION CALLS ---
+            self._fetch_and_cache_profiles_for_messages(new_messages)
+            new_messages = self._process_msg(new_messages) # Now just a pass-through
+            
             existing_messages = self.state['messages'].get(chat_id, [])
             message_dict = {msg['id']: msg for msg in existing_messages}
             message_dict.update({msg['id']: msg for msg in new_messages})
             
-            # Sort messages by ID to ensure correct order
             self.state['messages'][chat_id] = sorted(message_dict.values(), key=lambda m: m.get('id', 0))
 
             if new_messages:
@@ -177,100 +200,104 @@ class App:
             return False
 
     def load_more_messages(self, chat_id: str) -> List[Dict]:
-        """Fetches older messages for a chat to enable infinite scrolling."""
-        if not self.api:
-            return []
-
+        if not self.api: return []
         messages = self.state['messages'].get(chat_id, [])
-        if not messages:
-            return [] # Nothing to load before
-
+        if not messages: return []
         try:
             oldest_message_timestamp = messages[0].get('time')
-            self.logger.info(f"Loading messages for chat {chat_id} before message timestamp {oldest_message_timestamp}")
-
             history = self.api.get_history(chat_id=int(chat_id), count=50, from_timestamp=oldest_message_timestamp)
             older_messages = history.get('payload', {}).get('messages', [])
 
-            if older_messages and not older_messages[0].get('time') == oldest_message_timestamp:
-                # Prepend older messages to the existing list
+            if older_messages and older_messages[0].get('time') != oldest_message_timestamp:
+                # --- OPTIMIZATION CALLS ---
+                self._fetch_and_cache_profiles_for_messages(older_messages)
+                older_messages = self._process_msg(older_messages)
+
                 self.state['messages'][chat_id] = older_messages + messages
                 self.logger.info(f"Loaded {len(older_messages)} older messages.")
                 return older_messages
             
             self.logger.info("No more older messages to load.")
-            return False
+            return []
         except Exception as e:
             self.logger.error(f"Failed to load more messages: {e}", exc_info=True)
             return []
 
     def get_all_chats(self) -> Dict[str, Any]:
-        """Fetches and caches all user chats."""
-        if not self.api:
-            return {}
+        if not self.api: return {}
         try:
             self.logger.info("Fetching all chats...")
             chats = self.api.get_all_chats()
             self.state['chats'] = chats
-            
-            for chat_id in chats:
-                self.api.subscribe_to_chat(int(chat_id))
-                
+            for chat_id in chats: self.api.subscribe_to_chat(int(chat_id))
             self.logger.info(f"Fetched and subscribed to {len(chats)} chats.")
             return chats
         except Exception as e:
             self.logger.error(f"Failed to fetch chats: {e}", exc_info=True)
             return {}
 
+    # --- OPTIMIZATION: `get_profile` IS NOW PURELY A CACHE LOOKUP ---
     def get_profile(self, user_id: str) -> Optional[Dict]:
-        """Retrieves user profile details, using a cache."""
-        if user_id in self.state['profiles']:
-            return self.state['profiles'][user_id]
-        if not self.api:
-            return None
+        """Retrieves user profile details FROM THE CACHE."""
+        return self.state['profiles'].get(user_id)
+
+    # --- NEW METHOD FOR LAZY LOADING ---
+    def get_attachment_data_uri(self, chat_id: str, message_id: str, attach_info: Dict) -> Optional[Dict]:
+        """
+        On-demand download and processing for a single attachment, requested by the UI.
+        """
+        if not self.api: return None
+        self.logger.info(f"Lazy loading attachment for msg {message_id}")
+
+        file_content, filename, mime_type = None, 'download', 'application/octet-stream'
         
         try:
-            response = self.api.get_contact_details([int(user_id)])
-            profile = response.get('payload', {}).get('contacts', [None])[0]
-            if profile:
-                self.state['profiles'][user_id] = profile
-            return profile
+            attach_type = attach_info.get('_type')
+            match attach_type:
+                case "PHOTO":
+                    url = attach_info.get('baseUrl')
+                    file_content = requests.get(url, timeout=15).content
+                    mime_type = 'image/jpeg'
+                    filename = url.split('/')[-1] if url else 'photo.jpg'
+                case "VIDEO":
+                    file_content = self.api.get_video(attach_info.get('videoId'))
+                    mime_type = 'video/mp4'
+                    filename = f"{attach_info.get('videoId', 'video')}.mp4"
+                case "FILE":
+                    file_content, filename = self.api.get_file(attach_info.get('fileId'), chat_id, message_id)
+                    mime_type, _ = mimetypes.guess_type(filename)
+                    if not mime_type: mime_type = 'application/octet-stream'
+
+            if file_content:
+                encoded_content = base64.b64encode(file_content).decode('utf-8')
+                return {
+                    'data_uri': f"data:{mime_type};base64,{encoded_content}",
+                    'filename': filename
+                }
         except Exception as e:
-            self.logger.error(f"Failed to get profile for ID {user_id}: {e}")
-            return None
+            self.logger.error(f"Failed to lazy-load attachment: {e}", exc_info=True)
+        
+        return None
+
 
     def stop(self):
-        """Cleans up resources upon application exit."""
         self.logger.info("Shutting down App...")
-        if self.api:
-            self.api.close()
+        if self.api: self.api.close()
         self.logger.info("App shutdown complete.")
         
     def _setup_logging(self):
-        """Configures logging to file and console."""
         logger = logging.getLogger()
-        if logger.hasHandlers():
-            # Avoid adding duplicate handlers if this is called more than once
-            return
+        if logger.hasHandlers(): return
         logger.setLevel(logging.DEBUG)
-
-        formatter = logging.Formatter(
-            fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
-
         try:
-            file_handler = RotatingFileHandler(
-                "max_app_debug.log", maxBytes=5 * 1024 * 1024, backupCount=3, encoding='utf-8'
-            )
+            file_handler = RotatingFileHandler("max_app_debug.log", maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
             file_handler.setLevel(logging.DEBUG)
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
         except (PermissionError, IOError) as e:
-            # Log to console if file logging fails
-            print(f"Warning: Could not open log file due to an error: {e}")
+            print(f"Warning: Could not open log file: {e}")
