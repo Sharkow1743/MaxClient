@@ -37,26 +37,26 @@ jobs:
             - name: Build Executable with PyInstaller
               run: |
                   if ($env:RUNNER_OS -eq "Windows") {
-                    pyinstaller --name "MaxBridge" --onefile --windowed --add-data "web;web" main.py
+                    pyinstaller --name "MaxClient" --onefile --windowed --add-data "web;web" main.py
                   } else {
-                    pyinstaller --name "MaxBridge" --onefile --windowed --add-data "web:web" main.py
+                    pyinstaller --name "MaxClient" --onefile --windowed --add-data "web:web" main.py
                   }
               shell: pwsh
 
             - name: Prepare Artifacts for Release
               run: |
                   if ($env:RUNNER_OS -eq "Windows") {
-                    7z a MaxBridge-windows.zip ./dist/MaxBridge.exe
-                    echo "ASSET_PATH=MaxBridge-windows.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-                    echo "ASSET_NAME=MaxBridge-windows-${{ github.event.release.tag_name }}.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+                    7z a MaxClient-windows.zip ./dist/MaxClient.exe
+                    echo "ASSET_PATH=MaxClient-windows.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+                    echo "ASSET_NAME=MaxClient-windows-${{ github.event.release.tag_name }}.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
                   } elseif ($env:RUNNER_OS -eq "macOS") {
-                    zip -r MaxBridge-macos.zip ./dist/MaxBridge.app
-                    echo "ASSET_PATH=MaxBridge-macos.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-                    echo "ASSET_NAME=MaxBridge-macos-${{ github.event.release.tag_name }}.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+                    zip -r MaxClient-macos.zip ./dist/MaxClient.app
+                    echo "ASSET_PATH=MaxClient-macos.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+                    echo "ASSET_NAME=MaxClient-macos-${{ github.event.release.tag_name }}.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
                   } else {
-                    tar -czvf MaxBridge-linux.tar.gz -C ./dist MaxBridge
-                    echo "ASSET_PATH=MaxBridge-linux.tar.gz" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-                    echo "ASSET_NAME=MaxBridge-linux-${{ github.event.release.tag_name }}.tar.gz" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+                    tar -czvf MaxClient-linux.tar.gz -C ./dist MaxClient
+                    echo "ASSET_PATH=MaxClient-linux.tar.gz" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+                    echo "ASSET_NAME=MaxClient-linux-${{ github.event.release.tag_name }}.tar.gz" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
                   }
               shell: pwsh
 

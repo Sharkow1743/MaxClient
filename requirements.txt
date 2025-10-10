@@ -2,3 +2,4 @@ requests
 keyring
 PyWebView
 pyinstaller
+MaxBridge
