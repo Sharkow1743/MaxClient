@@ -1,0 +1,4 @@
+requests
+keyring
+PyWebView[gtk]
+pyinstaller
