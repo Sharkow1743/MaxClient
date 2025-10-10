@@ -36,11 +36,12 @@ jobs:
 
       - name: Build Executable with PyInstaller
         run: |
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            pyinstaller --name "MaxBridge" --onefile --windowed --noconsole --add-data "web;web" main.py
-          else
-            pyinstaller --name "MaxBridge" --onefile --windowed --noconsole --add-data "web:web" main.py
-          fi
+          if ($env:RUNNER_OS -eq "Windows") {
+            pyinstaller --name "MaxBridge" --onefile --windowed --add-data "web;web" main.py
+          } else {
+            pyinstaller --name "MaxBridge" --onefile --windowed --add-data "web:web" main.py
+          }
+        shell: pwsh
       
       - name: Prepare Artifacts for Release
         run: |
