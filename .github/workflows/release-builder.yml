@@ -45,23 +45,20 @@ jobs:
       
       - name: Prepare Artifacts for Release
         run: |
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            # Для Windows это .exe файл в папке dist
+          if ( "$RUNNER_OS" == "Windows" ); then
             7z a MaxBridge-windows.zip ./dist/MaxBridge.exe
             echo "ASSET_PATH=MaxBridge-windows.zip" >> $GITHUB_ENV
             echo "ASSET_NAME=MaxBridge-windows-${{ github.event.release.tag_name }}.zip" >> $GITHUB_ENV
-          elif [ "$RUNNER_OS" == "macOS" ]; then
-            # Для macOS это .app бандл, который лучше упаковать в zip
-            # Важно: --noconsole не работает на macOS, используйте --windowed
+          elif ( "$RUNNER_OS" == "macOS" ); then
             zip -r MaxBridge-macos.zip ./dist/MaxBridge.app
             echo "ASSET_PATH=MaxBridge-macos.zip" >> $GITHUB_ENV
             echo "ASSET_NAME=MaxBridge-macos-${{ github.event.release.tag_name }}.zip" >> $GITHUB_ENV
           else
-            # Для Linux это просто исполняемый файл
             tar -czvf MaxBridge-linux.tar.gz -C ./dist MaxBridge
             echo "ASSET_PATH=MaxBridge-linux.tar.gz" >> $GITHUB_ENV
             echo "ASSET_NAME=MaxBridge-linux-${{ github.event.release.tag_name }}.tar.gz" >> $GITHUB_ENV
           fi
+        shell: pwsh
 
       - name: Upload Artifact to Release
         uses: actions/upload-release-asset@v1
