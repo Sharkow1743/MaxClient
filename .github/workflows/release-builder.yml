@@ -45,11 +45,11 @@ jobs:
       
       - name: Prepare Artifacts for Release
         run: |
-          if ( "$RUNNER_OS" == "Windows" ); then
+          if ( "$RUNNER_OS" == "Windows" ) then
             7z a MaxBridge-windows.zip ./dist/MaxBridge.exe
             echo "ASSET_PATH=MaxBridge-windows.zip" >> $GITHUB_ENV
             echo "ASSET_NAME=MaxBridge-windows-${{ github.event.release.tag_name }}.zip" >> $GITHUB_ENV
-          elif ( "$RUNNER_OS" == "macOS" ); then
+          elif ( "$RUNNER_OS" == "macOS" ) then
             zip -r MaxBridge-macos.zip ./dist/MaxBridge.app
             echo "ASSET_PATH=MaxBridge-macos.zip" >> $GITHUB_ENV
             echo "ASSET_NAME=MaxBridge-macos-${{ github.event.release.tag_name }}.zip" >> $GITHUB_ENV
