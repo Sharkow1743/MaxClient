@@ -1,4 +1,4 @@
 requests
 keyring
-PyWebView[gtk]
+PyWebView
 pyinstaller
