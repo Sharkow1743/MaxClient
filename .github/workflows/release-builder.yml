@@ -46,9 +46,8 @@ jobs:
             - name: Prepare Artifacts for Release
               run: |
                   if ($env:RUNNER_OS -eq "Windows") {
-                    7z a MaxClient-windows.zip ./dist/MaxClient.exe
-                    echo "ASSET_PATH=MaxClient-windows.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-                    echo "ASSET_NAME=MaxClient-windows-${{ github.event.release.tag_name }}.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+                    echo "ASSET_PATH=./dist/MaxClient.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+                    echo "ASSET_NAME=MaxClient-windows-${{ github.event.release.tag_name }}.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
                   } elseif ($env:RUNNER_OS -eq "macOS") {
                     zip -r MaxClient-macos.zip ./dist/MaxClient.app
                     echo "ASSET_PATH=MaxClient-macos.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
