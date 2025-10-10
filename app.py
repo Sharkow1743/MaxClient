@@ -51,8 +51,8 @@ class App:
             self.logger.info("Authentication token loaded, initializing API.")
             self.api = MaxAPI(self.token, on_event=self._handle_event)
         else:
-            self.logger.info("No token found. API not initialized.")
-            self.api = None
+            self.logger.info("No token found, initializing API without token.")
+            self.api = MaxAPI(on_event=self._handle_event)
 
     def _handle_event(self, event: Dict):
         """Handles real-time events from the API websocket."""
@@ -120,13 +120,12 @@ class App:
 
 
     def is_authenticated(self) -> bool:
-        return self.token is not None
+        return bool(self.token)
 
     def auth(self, phone_number: str) -> Callable[[str], bool]:
         self.logger.info(f"Initiating authentication for phone: {phone_number}")
         try:
-            with MaxAPI() as temp_api:
-                temp_api.send_vertify_code(str(phone_number))
+            self.api.send_verify_code(str(phone_number))
             self.logger.debug("Verification code sent successfully.")
         except Exception as e:
             self.logger.error(f"Failed to send verification code: {e}", exc_info=True)
@@ -135,9 +134,7 @@ class App:
         def check_code(code: str) -> bool:
             try:
                 self.logger.info("Verifying code...")
-                with MaxAPI() as temp_api:
-                    result = temp_api.check_vertify_code(str(code))
-                new_token = result.get('token') or result.get('payload', {}).get('token')
+                new_token = self.api.check_verify_code(str(code))
                 if new_token:
                     keyring.set_password('maxApp', 'token', new_token)
                     self.token = new_token
@@ -146,7 +143,7 @@ class App:
                     self.logger.info("Authentication successful. Token saved.")
                     return True
                 else:
-                    self.logger.warning(f"Authentication failed. Response: {result}")
+                    self.logger.warning(f"Authentication failed.")
                     return False
             except Exception as e:
                 self.logger.error(f"Error during code verification: {e}", exc_info=True)

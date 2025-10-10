@@ -1,7 +1,6 @@
 let currentChatId = null;
 let isFullloaded = false; // Flag to prevent multiple simultaneous loads
 let isLoading = false;
-let preloadedMsgs = [];
 
 async function loadAttachment(element, chatId, messageId, attachInfo) {
     // Prevent multiple clicks while loading
@@ -195,7 +194,6 @@ function showMainView() {
     setTimeout(() => {
         document.getElementById('auth-view').style.display = 'none';
         document.getElementById('main-view').style.display = 'flex';
-        // This was moved from AppUI to ensure it runs *after* the view is visible
         window.pywebview.api.load_chats();
     }, 500);
 }
