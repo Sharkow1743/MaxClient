@@ -13,20 +13,28 @@ class MessageControl(ft.Row):
 
         sender_name = "You" if is_me else profile.get('name', 'Unknown User')
         message_text = message.get('text', '')
-        timestamp = datetime.datetime.fromtimestamp(message.get('time')).strftime('%Y-%m-%d %H:%M')
+
+        try:
+            time_value = message.get('time')
+            if isinstance(time_value, (int, float)):
+                timestamp = datetime.datetime.fromtimestamp(time_value).strftime('%Y-%m-%d %H:%M')
+            else:
+                timestamp = "No timestamp"
+        except (OSError, TypeError, ValueError):
+            timestamp = "No timestamp available"
 
         message_content = ft.Column(
             [
                 ft.Text(sender_name, weight=ft.FontWeight.BOLD),
                 ft.Text(message_text, selectable=True),
-                ft.Text(timestamp, size=10, color=ft.colors.GREY_500),
+                ft.Text(timestamp, size=10, color=ft.Colors.GREY_500),
             ],
             spacing=2
         )
 
         avatar = ft.CircleAvatar(
             content=ft.Text(self.get_initials(sender_name)),
-            bgcolor=ft.colors.BLUE_GREY_200 if is_me else ft.colors.GREEN_200,
+            bgcolor=ft.Colors.BLUE_GREY_200 if is_me else ft.Colors.GREEN_200,
         )
 
         self.controls = [avatar, message_content] if not is_me else [message_content, avatar]
