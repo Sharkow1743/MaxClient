@@ -11,7 +11,8 @@ class MessageControl(ft.Row):
         self.vertical_alignment = "start"
         self.alignment = ft.MainAxisAlignment.END if is_me else ft.MainAxisAlignment.START
 
-        sender_name = "You" if is_me else profile.get('name', 'Unknown User')
+        sender_name = "You" if is_me else profile['names'][0]['name']
+
         message_text = message.get('text', '')
 
         try:
@@ -136,7 +137,7 @@ class AppUI:
 
             self.chat_list.controls.append(
                 ft.ListTile(
-                    title=ft.Text(chat_data.get('name', 'Unknown Chat')),
+                    title=ft.Text(chat_data.get('title', 'Unknown Chat')),
                     on_click=on_chat_click
                 )
             )
