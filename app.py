@@ -6,12 +6,12 @@ from MaxBridge import MaxAPI
 import requests
 import base64
 import mimetypes
-
 from ui import AppUI
 
 class App:
     """
     Handles the application's core logic, state management, and API communication.
+    This class is now UI-agnostic.
     """
 
     def __init__(self):
@@ -20,7 +20,7 @@ class App:
 
         self.token: Optional[str] = keyring.get_password('maxApp', 'token')
         self.api: Optional[MaxAPI] = None
-        self.ui: Optional[AppUI] = None
+        self.ui: Optional[AppUI] = None # Forward reference to the UI class in ui.py
 
         self.state: Dict[str, Any] = {
             'chat': None,
@@ -34,12 +34,10 @@ class App:
         if self.is_authenticated():
             self.state['profile'] = getattr(self.api, 'user', {}).get('contact', {})
 
-        self.ui = AppUI(self)
-
     def run(self):
-        """Starts the user interface and the application's main loop."""
+        """ The UI's run method will be called from main.py """
         if self.ui:
-            self.ui.run()
+            pass
         else:
             self.logger.error("UI is not initialized. Cannot run the application.")
 
@@ -67,8 +65,6 @@ class App:
                 chat_id_str = str(chat_id)
                 messages = self.state['messages'].setdefault(chat_id_str, [])
                 if not any(msg['id'] == message_data['id'] for msg in messages):
-                    # We don't process attachments for live events to save resources,
-                    # as they will be lazy-loaded by the UI anyway.
                     messages.append(message_data)
                     self.logger.debug(f"Added new message {message_data.get('id')} to chat {chat_id_str}")
                 if self.ui:
@@ -76,7 +72,6 @@ class App:
         else:
             self.logger.debug(f"Unhandled event payload: {payload}")
 
-    # --- OPTIMIZATION 1: REMOVED EAGER DOWNLOADING ---
     def _process_msg(self, msgs: List[Dict]) -> List[Dict]:
         """
         This function is now a simple pass-through.
@@ -84,14 +79,12 @@ class App:
         """
         return msgs
 
-    # --- OPTIMIZATION 2: BATCH PROFILE FETCHING ---
     def _fetch_and_cache_profiles_for_messages(self, messages: List[Dict]):
         """
         Scans messages, finds uncached user profiles, and fetches them in a single batch request.
         """
         if not self.api: return
 
-        # Collect all unique sender IDs that we haven't cached yet.
         profile_cache = self.state['profiles']
         uncached_user_ids = {
             str(msg['sender'])
@@ -100,16 +93,14 @@ class App:
         }
 
         if not uncached_user_ids:
-            return # All profiles are already in cache
+            return
 
         self.logger.info(f"Found {len(uncached_user_ids)} new profiles to fetch.")
         try:
-            # Convert to list of integers for the API call
             user_ids_to_fetch = [int(uid) for uid in uncached_user_ids]
             response = self.api.get_contact_details(user_ids_to_fetch)
             profiles = response.get('payload', {}).get('contacts', [])
-            
-            # Update the cache
+
             for profile in profiles:
                 profile_id_str = str(profile.get('id'))
                 self.state['profiles'][profile_id_str] = profile
@@ -171,18 +162,17 @@ class App:
         try:
             self.logger.info(f"Navigating to chat {chat_id}")
             self.state['chat'] = chat_id
-            
+
             history = self.api.get_history(chat_id=int(chat_id), count=50)
             new_messages = history.get('payload', {}).get('messages', [])
-            
-            # --- OPTIMIZATION CALLS ---
+
             self._fetch_and_cache_profiles_for_messages(new_messages)
-            new_messages = self._process_msg(new_messages) # Now just a pass-through
-            
+            new_messages = self._process_msg(new_messages)
+
             existing_messages = self.state['messages'].get(chat_id, [])
             message_dict = {msg['id']: msg for msg in existing_messages}
             message_dict.update({msg['id']: msg for msg in new_messages})
-            
+
             self.state['messages'][chat_id] = sorted(message_dict.values(), key=lambda m: m.get('id', 0))
 
             if new_messages:
@@ -206,14 +196,13 @@ class App:
             older_messages = history.get('payload', {}).get('messages', [])
 
             if older_messages and older_messages[0].get('time') != oldest_message_timestamp:
-                # --- OPTIMIZATION CALLS ---
                 self._fetch_and_cache_profiles_for_messages(older_messages)
                 older_messages = self._process_msg(older_messages)
 
                 self.state['messages'][chat_id] = older_messages + messages
                 self.logger.info(f"Loaded {len(older_messages)} older messages.")
                 return older_messages
-            
+
             self.logger.info("No more older messages to load.")
             return []
         except Exception as e:
@@ -233,12 +222,10 @@ class App:
             self.logger.error(f"Failed to fetch chats: {e}", exc_info=True)
             return {}
 
-    # --- OPTIMIZATION: `get_profile` IS NOW PURELY A CACHE LOOKUP ---
     def get_profile(self, user_id: str) -> Optional[Dict]:
         """Retrieves user profile details FROM THE CACHE."""
         return self.state['profiles'].get(user_id)
 
-    # --- NEW METHOD FOR LAZY LOADING ---
     def get_attachment_data_uri(self, chat_id: str, message_id: str, attach_info: Dict) -> Optional[Dict]:
         """
         On-demand download and processing for a single attachment, requested by the UI.
@@ -247,23 +234,22 @@ class App:
         self.logger.info(f"Lazy loading attachment for msg {message_id}")
 
         file_content, filename, mime_type = None, 'download', 'application/octet-stream'
-        
+
         try:
             attach_type = attach_info.get('_type')
-            match attach_type:
-                case "PHOTO":
-                    url = attach_info.get('baseUrl')
-                    file_content = requests.get(url, timeout=15).content
-                    mime_type = 'image/jpeg'
-                    filename = url.split('/')[-1] if url else 'photo.jpg'
-                case "VIDEO":
-                    file_content = self.api.get_video(attach_info.get('videoId'))
-                    mime_type = 'video/mp4'
-                    filename = f"{attach_info.get('videoId', 'video')}.mp4"
-                case "FILE":
-                    file_content, filename = self.api.get_file(attach_info.get('fileId'), chat_id, message_id)
-                    mime_type, _ = mimetypes.guess_type(filename)
-                    if not mime_type: mime_type = 'application/octet-stream'
+            if attach_type == "PHOTO":
+                url = attach_info.get('baseUrl')
+                file_content = requests.get(url, timeout=15).content
+                mime_type = 'image/jpeg'
+                filename = url.split('/')[-1] if url else 'photo.jpg'
+            elif attach_type == "VIDEO":
+                file_content = self.api.get_video(attach_info.get('videoId'))
+                mime_type = 'video/mp4'
+                filename = f"{attach_info.get('videoId', 'video')}.mp4"
+            elif attach_type == "FILE":
+                file_content, filename = self.api.get_file(attach_info.get('fileId'), chat_id, message_id)
+                mime_type, _ = mimetypes.guess_type(filename)
+                if not mime_type: mime_type = 'application/octet-stream'
 
             if file_content:
                 encoded_content = base64.b64encode(file_content).decode('utf-8')
@@ -273,7 +259,7 @@ class App:
                 }
         except Exception as e:
             self.logger.error(f"Failed to lazy-load attachment: {e}", exc_info=True)
-        
+
         return None
 
 
@@ -281,7 +267,7 @@ class App:
         self.logger.info("Shutting down App...")
         if self.api: self.api.close()
         self.logger.info("App shutdown complete.")
-        
+
     def _setup_logging(self):
         logger = logging.getLogger()
         if logger.hasHandlers(): return
